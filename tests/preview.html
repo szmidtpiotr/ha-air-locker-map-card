@@ -1,0 +1,111 @@
+<!doctype html>
+<!--
+  Podgląd karty bez Home Assistanta: atrapa obiektu `hass` i kilka stanów.
+  Uruchom:  python3 -m http.server 8765   (w katalogu repo)
+  Otwórz:   http://localhost:8765/tests/preview.html
+  Parametr ?theme=dark przełącza zmienne motywu na ciemne.
+-->
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Air Locker Map Card — podgląd</title>
+<style>
+  :root {
+    --primary-text-color: #212121; --secondary-text-color: #727272;
+    --divider-color: rgba(0,0,0,.12); --primary-color: #03a9f4;
+    --ha-card-background: #fff; --warning-color: #ffa600;
+    --page-bg: #f0f2f5;
+  }
+  :root.dark {
+    --primary-text-color: #e1e1e1; --secondary-text-color: #9b9b9b;
+    --divider-color: rgba(225,225,225,.12); --primary-color: #4fc3f7;
+    --ha-card-background: #1c1c1c; --page-bg: #111;
+  }
+  body { margin: 0; padding: 16px; background: var(--page-bg); font-family: Roboto, "Noto Sans", sans-serif; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 16px; }
+  .case { display: flex; flex-direction: column; gap: 6px; }
+  .case > h3 { margin: 0; font: 500 12px monospace; color: var(--secondary-text-color); }
+  .narrow { max-width: 300px; }
+  /* atrapa ha-card, z grubsza jak w HA */
+  ha-card { background: var(--ha-card-background); border-radius: 12px;
+            border: 1px solid var(--divider-color); box-shadow: none; }
+</style>
+</head>
+<body>
+<div class="grid" id="grid"></div>
+<script>
+  if (new URLSearchParams(location.search).get("theme") === "dark") document.documentElement.classList.add("dark");
+  window.__events = [];
+  window.addEventListener("hass-more-info", (e) => window.__events.push(e.detail.entityId));
+</script>
+<script src="../air-locker-map-card.js"></script>
+<script>
+  const MU = "μg/m³";
+  const now = Date.now();
+  const iso = (minAgo) => new Date(now - minAgo * 60000).toISOString();
+
+  function makeHass(o = {}) {
+    const d = "dev1", p = "sensor.powietrze_dom_";
+    const v = (x) => (x === undefined ? "unavailable" : String(x));
+    const states = {
+      [p + "pm1"]: { state: v(o.pm1), attributes: { device_class: "pm1", unit_of_measurement: MU } },
+      [p + "pm2_5"]: { state: v(o.pm25), attributes: { device_class: "pm25", unit_of_measurement: MU, friendly_name: "Powietrze dom PM2.5" } },
+      [p + "pm10"]: { state: v(o.pm10), attributes: { device_class: "pm10", unit_of_measurement: MU } },
+      [p + "cisnienie_n_p_m"]: { state: v(o.p), attributes: { device_class: "atmospheric_pressure", unit_of_measurement: "hPa" } },
+      [p + "cisnienie_na_miejscu"]: { state: v(o.p ? o.p - 12 : undefined), attributes: { device_class: "atmospheric_pressure", unit_of_measurement: "hPa" } },
+      [p + "odleglosc_do_czujnika"]: { state: v(o.dist), attributes: { device_class: "distance", unit_of_measurement: "m" } },
+      [p + "ostatni_odczyt"]: { state: o.ago === undefined ? "unavailable" : iso(o.ago), attributes: { device_class: "timestamp" } },
+      [p + "paczkomat_z_czujnikiem"]: { state: v(o.code), attributes: o.code ? {
+        address: "Wolska 84/86, 01-141 Warszawa", description: "przy sklepie", latitude: 52.23229, longitude: 20.95952,
+        elevation: 104, level: 1, sensor_generation: 2, flags: [] } : {} },
+      "binary_sensor.powietrze_dom_podejrzany_odczyt": { state: o.problem ? "on" : "off",
+        attributes: { device_class: "problem", flags: o.problem ? ["stuck", "humid"] : [], reasons: o.problem || [], status: o.problem ? "suspect" : "ok" } },
+      "sensor.inny_pm2_5": { state: "40", attributes: { device_class: "pm25", unit_of_measurement: MU } },
+    };
+    for (const s of Object.values(states)) s.last_updated = JSON.stringify(o);
+    const reg = (id, tk) => ({ entity_id: id, device_id: d, platform: "air_locker_map", translation_key: tk });
+    const entities = {
+      [p + "pm1"]: reg(p + "pm1"), [p + "pm2_5"]: reg(p + "pm2_5"), [p + "pm10"]: reg(p + "pm10"),
+      [p + "cisnienie_n_p_m"]: reg(p + "cisnienie_n_p_m", "pressure_sl"),
+      [p + "cisnienie_na_miejscu"]: reg(p + "cisnienie_na_miejscu", "pressure_raw"),
+      [p + "odleglosc_do_czujnika"]: reg(p + "odleglosc_do_czujnika", "distance"),
+      [p + "ostatni_odczyt"]: reg(p + "ostatni_odczyt", "updated"),
+      [p + "paczkomat_z_czujnikiem"]: reg(p + "paczkomat_z_czujnikiem", "source"),
+      "binary_sensor.powietrze_dom_podejrzany_odczyt": reg("binary_sensor.powietrze_dom_podejrzany_odczyt", "suspect"),
+      "sensor.inny_pm2_5": { entity_id: "sensor.inny_pm2_5", device_id: "dev2", platform: "airly" },
+    };
+    if (o.dropRegistry) delete entities[p + "pm2_5"];
+    return { states, entities, devices: { dev1: { id: d, name: "Powietrze dom" } }, language: "pl" };
+  }
+
+  const base = { pm1: 4.1, pm10: 9.3, p: 1013.4, dist: 1563, code: "WAW43BAPP", ago: 12 };
+  const CASES = [
+    ["normal", { ...base, pm25: 6.75 }, {}],
+    ["bad", { ...base, pm25: 80, pm1: 61.2, pm10: 118, dist: 570, ago: 47 }, {}],
+    ["suspect", { ...base, pm25: 22.4, pm10: 31, ago: 190,
+                  problem: ["odczyt zawieszony od 6 h", "wilgotność > 95%"] }, { title: "Działka" }],
+    ["unavailable", {}, {}],
+    ["no-pressure-details", { ...base, pm25: 40 }, { show_pressure: false, show_details: false }],
+    ["device-id", { ...base, pm25: 14 }, { entity: undefined, device_id: "dev1" }],
+    ["narrow", { ...base, pm25: 120, pm10: 160 }, {}],
+  ];
+
+  const grid = document.getElementById("grid");
+  window.__cards = {};
+  for (const [name, state, extra] of CASES) {
+    const wrap = document.createElement("div");
+    wrap.className = "case" + (name === "narrow" ? " narrow" : "");
+    wrap.id = "case-" + name;
+    wrap.innerHTML = `<h3>${name}</h3>`;
+    const card = document.createElement("air-locker-map-card");
+    card.setConfig({ entity: "sensor.powietrze_dom_pm2_5", ...extra });
+    card.hass = makeHass(state);
+    wrap.appendChild(card);
+    grid.appendChild(wrap);
+    window.__cards[name] = card;
+  }
+  window.__stub = customElements.get("air-locker-map-card").getStubConfig(makeHass({}));
+</script>
+</body>
+</html>
