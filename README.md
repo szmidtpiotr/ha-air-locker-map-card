@@ -5,8 +5,7 @@ Karta do panelu Home Assistanta dla integracji
 z czujników powietrza w paczkomatach InPost. Mapa wszystkich czujników:
 <https://air-locker-map.studio-colorbox.com/>.
 
-> Zrzut ekranu dodamy wkrótce. Do tego czasu podgląd możesz otworzyć lokalnie
-> w `tests/preview.html` (opis niżej).
+![Karta Air Locker Map — jasny i ciemny motyw](docs/screenshot.png)
 
 ## Co pokazuje karta
 
